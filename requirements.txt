@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pymysql
+numpy
+pandas
+pydantic-settings
+apscheduler
+scikit-surprise
