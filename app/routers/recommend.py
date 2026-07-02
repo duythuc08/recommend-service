@@ -47,17 +47,26 @@ def recommend(payload: RecommendRequest, db: Session = Depends(get_db)):
     if use_cold_start:
         scores = compute_popularity_scores(db, candidate_ids)
         ranked = sorted(scores.items(), key=lambda x: -x[1])[: settings.prediction_top_n]
-        recs = [MoviePrediction(movieId=mid, score=score, source="cold_start_popularity") for mid, score in ranked]
+        recs = [
+            MoviePrediction(movieId=mid, predictedScore=score, neighborCount=0, source="cold_start_popularity")
+            for mid, score in ranked
+        ]
     else:
         predictions = predict_ratings_for_user(user_id, algo, trainset, candidate_ids)
         if not predictions:
             scores = compute_popularity_scores(db, candidate_ids)
             ranked = sorted(scores.items(), key=lambda x: -x[1])[: settings.prediction_top_n]
-            recs = [MoviePrediction(movieId=mid, score=score, source="cold_start_popularity") for mid, score in ranked]
+            recs = [
+                MoviePrediction(movieId=mid, predictedScore=score, neighborCount=0, source="cold_start_popularity")
+                for mid, score in ranked
+            ]
             use_cold_start = True
         else:
-            ranked = sorted(predictions.items(), key=lambda x: -x[1])[: settings.prediction_top_n]
-            recs = [MoviePrediction(movieId=mid, score=score, source="cf") for mid, score in ranked]
+            ranked = sorted(predictions.items(), key=lambda x: -x[1][0])[: settings.prediction_top_n]
+            recs = [
+                MoviePrediction(movieId=mid, predictedScore=score, neighborCount=nc, source="cf")
+                for mid, (score, nc) in ranked
+            ]
 
     return RecommendResponse(
         userId=user_id,
@@ -89,6 +98,9 @@ def train(payload: TrainRequest = TrainRequest(), db: Session = Depends(get_db))
         nCandidateMovies=result["n_candidate_movies"],
         nExplicitRatings=result["n_explicit_ratings"],
         nActivityLogs=result["n_activity_logs"],
+        nUsersProcessed=result["n_users_processed"],
+        nPredictionsWritten=result["n_predictions_written"],
+        batchElapsedSeconds=result["batch_elapsed_seconds"],
     )
 
 

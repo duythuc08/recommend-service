@@ -81,7 +81,7 @@ def predict_ratings_for_user(
     algo: KNNWithMeans,
     trainset: Trainset,
     candidate_movie_ids: list[int],
-) -> dict[int, float]:
+) -> dict[int, tuple[float, int]]:
     """
     Gọi .predict() cho từng candidate movie. Surprise tự xử lý trường hợp
     user/item chưa biết (cold-start) bằng cách trả về global mean - vì
@@ -89,6 +89,9 @@ def predict_ratings_for_user(
     router, nên ở đây CHỈ predict cho user đã có trong trainset; nếu
     không có (rải user mới hoàn toàn), trả về {} để router fallback
     sang cold-start.
+
+    Trả về dict[movie_id -> (predicted_score, neighbor_count)].
+    neighbor_count = pred.details['actual_k'] (số neighbor thực sự đóng góp).
     """
     try:
         trainset.to_inner_uid(user_id)
@@ -107,6 +110,7 @@ def predict_ratings_for_user(
         # khi không đủ neighbor hợp lệ (vd toàn bộ neighbor có sim <= min_similarity)
         if pred.details.get("was_impossible", False):
             continue
-        predictions[movie_id] = float(pred.est)
+        neighbor_count = int(pred.details.get("actual_k", 0))
+        predictions[movie_id] = (float(pred.est), neighbor_count)
 
     return predictions

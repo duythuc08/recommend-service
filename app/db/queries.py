@@ -80,6 +80,69 @@ def load_scoring_params(db: Session) -> dict[str, float]:
     return {r[0]: float(r[1]) for r in rows}
 
 
+def load_all_excluded_movie_ids_bulk(db: Session) -> dict[str, set[int]]:
+    """
+    Load toàn bộ excluded movies cho TẤT CẢ user trong 1 query duy nhất.
+    Dùng cho batch predict_all_users() - tránh N query riêng lẻ cho từng user.
+    excluded = phim có explicit review HOẶC đã BOOK_TICKET thành công.
+    """
+    query = text("""
+        SELECT user_id, movie_id FROM review
+        WHERE entity_status = 'ACTIVE' AND review_status = 'APPROVED'
+        UNION
+        SELECT user_id, movie_id FROM user_activity_logs
+        WHERE action_type = 'BOOK_TICKET' AND entity_status = 'ACTIVE'
+    """)
+    rows = db.execute(query).fetchall()
+    result: dict[str, set[int]] = {}
+    for user_id, movie_id in rows:
+        result.setdefault(str(user_id), set()).add(int(movie_id))
+    return result
+
+
+def upsert_user_preferences(
+    db: Session,
+    predictions: list[dict],
+    calculated_at,
+    batch_size: int = 500,
+) -> int:
+    """
+    Batch UPSERT list predictions vào bảng user_preference.
+    predictions: list of {user_id, movie_id, predicted_score, neighbor_count}
+    Trả về số dòng đã upsert.
+    """
+    if not predictions:
+        return 0
+
+    upsert_sql = text("""
+        INSERT INTO user_preference (user_id, movie_id, predicted_score, neighbor_count, last_calculated_at)
+        VALUES (:user_id, :movie_id, :predicted_score, :neighbor_count, :calculated_at)
+        ON DUPLICATE KEY UPDATE
+            predicted_score = VALUES(predicted_score),
+            neighbor_count = VALUES(neighbor_count),
+            last_calculated_at = VALUES(last_calculated_at)
+    """)
+
+    total = 0
+    for i in range(0, len(predictions), batch_size):
+        batch = predictions[i : i + batch_size]
+        params = [
+            {
+                "user_id": p["user_id"],
+                "movie_id": p["movie_id"],
+                "predicted_score": p["predicted_score"],
+                "neighbor_count": p["neighbor_count"],
+                "calculated_at": calculated_at,
+            }
+            for p in batch
+        ]
+        db.execute(upsert_sql, params)
+        total += len(batch)
+
+    db.commit()
+    return total
+
+
 def load_excluded_movie_ids(db: Session, user_id: str) -> set[int]:
     """
     excluded_movies(u) theo đúng định nghĩa đã chốt:

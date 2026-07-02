@@ -8,8 +8,9 @@ class RecommendRequest(BaseModel):
 
 class MoviePrediction(BaseModel):
     movieId: int
-    score: float
-    source: str  # "cf" hoặc "cold_start_popularity" - để Spring Boot/thesis báo cáo biết nguồn gốc
+    predictedScore: float   # tương ứng predicted_score trong bảng user_preference
+    neighborCount: int      # tương ứng neighbor_count trong bảng user_preference; 0 khi cold_start
+    source: str             # "cf" hoặc "cold_start_popularity" - để Spring Boot/thesis báo cáo biết nguồn gốc
 
 
 class RecommendResponse(BaseModel):
@@ -33,3 +34,6 @@ class TrainResponse(BaseModel):
     nCandidateMovies: int
     nExplicitRatings: int
     nActivityLogs: int
+    nUsersProcessed: int    # số user đã tính batch prediction
+    nPredictionsWritten: int  # số dòng upsert vào user_preference
+    batchElapsedSeconds: float  # thời gian riêng của bước predict_all_users

@@ -10,10 +10,13 @@ from datetime import datetime
 
 import pandas as pd
 
-from app.core.cf_engine import build_utility_matrix, build_surprise_trainset, train_knn_model
+from app.core.cf_engine import build_utility_matrix, build_surprise_trainset, train_knn_model, predict_ratings_for_user
 from app.core.config import settings
 from app.core.implicit_scoring import build_implicit_scores, convert_to_rating_scale
-from app.db.queries import load_all_reviews, load_all_activity_logs, load_candidate_movies, load_scoring_params
+from app.db.queries import (
+    load_all_reviews, load_all_activity_logs, load_candidate_movies,
+    load_scoring_params, load_all_excluded_movie_ids_bulk, upsert_user_preferences,
+)
 
 
 class ModelState:
@@ -69,6 +72,8 @@ class ModelState:
             self.last_use_implicit = use_implicit
 
         elapsed = (datetime.utcnow() - t0).total_seconds()
+        batch_stats = self.predict_all_users(db_session)
+
         return {
             "trained_at": t0.isoformat(),
             "elapsed_seconds": elapsed,
@@ -78,6 +83,58 @@ class ModelState:
             "n_candidate_movies": len(candidate_df) if candidate_df is not None else 0,
             "n_explicit_ratings": len(review_df),
             "n_activity_logs": len(activity_df),
+            **batch_stats,
+        }
+
+    def predict_all_users(self, db_session) -> dict:
+        """
+        Sau khi train() xong, tính prediction cho TOÀN BỘ user có trong utility_long
+        và UPSERT vào bảng user_preference.
+
+        - Không giới hạn top-N ở bước này; Spring Boot tự ORDER BY + LIMIT khi đọc.
+        - User rơi vào cold-start (predict trả {}) không được ghi gì -> Spring Boot
+          tự fallback Popularity khi SELECT không tìm thấy dòng cho user đó.
+        """
+        t0 = datetime.utcnow()
+        algo, trainset, utility_long, candidate_movies, _ = self.get_snapshot()
+
+        if utility_long is None or utility_long.empty or candidate_movies is None:
+            return {"n_users_processed": 0, "n_predictions_written": 0, "batch_elapsed_seconds": 0.0}
+
+        all_user_ids = utility_long["user_id"].unique().tolist()
+        all_candidate_ids = candidate_movies["movie_id"].tolist()
+
+        excluded_map = load_all_excluded_movie_ids_bulk(db_session)
+
+        all_predictions: list[dict] = []
+        n_users_processed = 0
+
+        for user_id in all_user_ids:
+            excluded = excluded_map.get(str(user_id), set())
+            candidate_ids = [m for m in all_candidate_ids if m not in excluded]
+            if not candidate_ids:
+                continue
+
+            preds = predict_ratings_for_user(user_id, algo, trainset, candidate_ids)
+            if not preds:
+                continue  # cold-start: không ghi, Spring Boot sẽ fallback Popularity
+
+            for movie_id, (predicted_score, neighbor_count) in preds.items():
+                all_predictions.append({
+                    "user_id": user_id,
+                    "movie_id": movie_id,
+                    "predicted_score": predicted_score,
+                    "neighbor_count": neighbor_count,
+                })
+            n_users_processed += 1
+
+        n_written = upsert_user_preferences(db_session, all_predictions, calculated_at=t0)
+        elapsed = (datetime.utcnow() - t0).total_seconds()
+
+        return {
+            "n_users_processed": n_users_processed,
+            "n_predictions_written": n_written,
+            "batch_elapsed_seconds": elapsed,
         }
 
     def get_snapshot(self):
