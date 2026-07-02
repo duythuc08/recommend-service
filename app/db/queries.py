@@ -103,7 +103,6 @@ def load_all_excluded_movie_ids_bulk(db: Session) -> dict[str, set[int]]:
 def upsert_user_preferences(
     db: Session,
     predictions: list[dict],
-    calculated_at,
     batch_size: int = 500,
 ) -> int:
     """
@@ -115,12 +114,11 @@ def upsert_user_preferences(
         return 0
 
     upsert_sql = text("""
-        INSERT INTO user_preference (user_id, movie_id, predicted_score, neighbor_count, last_calculated_at)
-        VALUES (:user_id, :movie_id, :predicted_score, :neighbor_count, :calculated_at)
+        INSERT INTO user_preference (user_id, movie_id, predicted_score, neighbor_count)
+        VALUES (:user_id, :movie_id, :predicted_score, :neighbor_count)
         ON DUPLICATE KEY UPDATE
             predicted_score = VALUES(predicted_score),
-            neighbor_count = VALUES(neighbor_count),
-            last_calculated_at = VALUES(last_calculated_at)
+            neighbor_count = VALUES(neighbor_count)
     """)
 
     total = 0
@@ -132,7 +130,6 @@ def upsert_user_preferences(
                 "movie_id": p["movie_id"],
                 "predicted_score": p["predicted_score"],
                 "neighbor_count": p["neighbor_count"],
-                "calculated_at": calculated_at,
             }
             for p in batch
         ]

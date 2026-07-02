@@ -128,7 +128,7 @@ class ModelState:
                 })
             n_users_processed += 1
 
-        n_written = upsert_user_preferences(db_session, all_predictions, calculated_at=t0)
+        n_written = upsert_user_preferences(db_session, all_predictions)
         elapsed = (datetime.utcnow() - t0).total_seconds()
 
         return {
