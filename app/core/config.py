@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     cold_start_popularity_alpha: float = 0.5
 
     # ===== Prediction =====
-    prediction_top_n: int = 3
+    prediction_top_n: int = 5
 
     # ===== CF mode - công tác chạy thuần trước, cải thiện dần sau =====
     # False -> CF Pure (chỉ explicit rating, dùng để có baseline RMSE/MAE)

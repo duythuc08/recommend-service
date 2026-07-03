@@ -110,6 +110,10 @@ class ModelState:
         n_users_processed = 0
 
         for user_id in all_user_ids:
+            k_u = int((utility_long["user_id"] == user_id).sum())
+            if k_u < settings.cold_start_min_interactions:
+                continue  # cold-start: để Spring Boot fallback Popularity
+
             excluded = excluded_map.get(str(user_id), set())
             candidate_ids = [m for m in all_candidate_ids if m not in excluded]
             if not candidate_ids:

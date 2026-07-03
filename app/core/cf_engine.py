@@ -69,7 +69,7 @@ def train_knn_model(trainset: Trainset) -> KNNWithMeans:
     }
     algo = KNNWithMeans(
         k=settings.cf_top_k,
-        min_k=1,
+        min_k=2,
         sim_options=sim_options,
     )
     algo.fit(trainset)
