@@ -11,6 +11,7 @@ from datetime import datetime
 import pandas as pd
 
 from app.core.cf_engine import build_utility_matrix, build_surprise_trainset, train_knn_model, predict_ratings_for_user
+from app.core.cold_start import compute_popularity_scores
 from app.core.config import settings
 from app.core.implicit_scoring import build_implicit_scores, convert_to_rating_scale
 from app.db.queries import (
@@ -88,18 +89,20 @@ class ModelState:
 
     def predict_all_users(self, db_session) -> dict:
         """
-        Sau khi train() xong, tính prediction cho TOÀN BỘ user có trong utility_long
-        và UPSERT vào bảng user_preference.
+        Sau khi train() xong, tinh prediction cho TOAN BO user va UPSERT vao user_preference.
 
-        - Không giới hạn top-N ở bước này; Spring Boot tự ORDER BY + LIMIT khi đọc.
-        - User rơi vào cold-start (predict trả {}) không được ghi gì -> Spring Boot
-          tự fallback Popularity khi SELECT không tìm thấy dòng cho user đó.
+        source duoc ghi theo dung mode dang chay:
+          - "cf_implicit"            : CF voi implicit feedback
+          - "cf_pure"                : CF chi dung explicit rating
+          - "cold_start_popularity"  : user it tuong tac, fallback popularity
         """
         t0 = datetime.utcnow()
         algo, trainset, utility_long, candidate_movies, _ = self.get_snapshot()
 
         if utility_long is None or utility_long.empty or candidate_movies is None:
             return {"n_users_processed": 0, "n_predictions_written": 0, "batch_elapsed_seconds": 0.0}
+
+        cf_source = "cf_implicit" if self.last_use_implicit else "cf_pure"
 
         all_user_ids = utility_long["user_id"].unique().tolist()
         all_candidate_ids = candidate_movies["movie_id"].tolist()
@@ -109,19 +112,48 @@ class ModelState:
         all_predictions: list[dict] = []
         n_users_processed = 0
 
-        for user_id in all_user_ids:
-            k_u = int((utility_long["user_id"] == user_id).sum())
-            if k_u < settings.cold_start_min_interactions:
-                continue  # cold-start: để Spring Boot fallback Popularity
+        # Cache popularity scores de khong tinh lai nhieu lan cho nhieu cold-start user
+        _popularity_cache: dict[int, float] | None = None
 
+        for user_id in all_user_ids:
             excluded = excluded_map.get(str(user_id), set())
             candidate_ids = [m for m in all_candidate_ids if m not in excluded]
             if not candidate_ids:
                 continue
 
+            k_u = int((utility_long["user_id"] == user_id).sum())
+            if k_u < settings.cold_start_min_interactions:
+                # Cold-start: tinh popularity va ghi vao DB luon
+                if _popularity_cache is None:
+                    _popularity_cache = compute_popularity_scores(db_session, all_candidate_ids)
+                for movie_id in candidate_ids:
+                    score = _popularity_cache.get(movie_id, 0.0)
+                    all_predictions.append({
+                        "user_id": user_id,
+                        "movie_id": movie_id,
+                        "predicted_score": score,
+                        "neighbor_count": 0,
+                        "source": "cold_start_popularity",
+                    })
+                n_users_processed += 1
+                continue
+
             preds = predict_ratings_for_user(user_id, algo, trainset, candidate_ids)
             if not preds:
-                continue  # cold-start: không ghi, Spring Boot sẽ fallback Popularity
+                # Surprise khong du neighbor hop le -> fallback popularity
+                if _popularity_cache is None:
+                    _popularity_cache = compute_popularity_scores(db_session, all_candidate_ids)
+                for movie_id in candidate_ids:
+                    score = _popularity_cache.get(movie_id, 0.0)
+                    all_predictions.append({
+                        "user_id": user_id,
+                        "movie_id": movie_id,
+                        "predicted_score": score,
+                        "neighbor_count": 0,
+                        "source": "cold_start_popularity",
+                    })
+                n_users_processed += 1
+                continue
 
             for movie_id, (predicted_score, neighbor_count) in preds.items():
                 all_predictions.append({
@@ -129,6 +161,7 @@ class ModelState:
                     "movie_id": movie_id,
                     "predicted_score": predicted_score,
                     "neighbor_count": neighbor_count,
+                    "source": cf_source,
                 })
             n_users_processed += 1
 
