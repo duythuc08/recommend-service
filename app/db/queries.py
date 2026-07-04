@@ -114,11 +114,12 @@ def upsert_user_preferences(
         return 0
 
     upsert_sql = text("""
-        INSERT INTO user_preference (user_id, movie_id, predicted_score, neighbor_count)
-        VALUES (:user_id, :movie_id, :predicted_score, :neighbor_count)
+        INSERT INTO user_preference (user_id, movie_id, predicted_score, neighbor_count, source)
+        VALUES (:user_id, :movie_id, :predicted_score, :neighbor_count, :source)
         ON DUPLICATE KEY UPDATE
             predicted_score = VALUES(predicted_score),
-            neighbor_count = VALUES(neighbor_count)
+            neighbor_count = VALUES(neighbor_count),
+            source = VALUES(source)
     """)
 
     total = 0
@@ -130,6 +131,7 @@ def upsert_user_preferences(
                 "movie_id": p["movie_id"],
                 "predicted_score": p["predicted_score"],
                 "neighbor_count": p["neighbor_count"],
+                "source": p["source"],
             }
             for p in batch
         ]
