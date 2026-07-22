@@ -1,0 +1,28 @@
+
+======================================================================
+  KẾT QUẢ ĐÁNH GIÁ MÔ HÌNH CF
+======================================================================
+
+Chỉ số                                CF thuần   CF + Implicit
+------------------------------ --------------- ---------------
+RMSE                                    1.3955          1.6727
+MAE                                     1.2719          1.6044
+Hit Rate@5                              0.3074          0.3930
+Hit Rate@10                             0.5837          0.5720
+Genre Match Rate                           N/A             N/A
+Coverage (%)                             94.96           99.90
+Thời gian train (s)                       0.21            0.70
+Impossible predictions (%)                0.00            0.00
+User bỏ (< 2 ratings)                        1               1
+------------------------------ --------------- ---------------
+
+Tổng explicit ratings trong DB       : 14834
+Tổng activity logs trong DB          : 38714
+Số user 'test item not in candidate' : 754 (74.6% tổng user test)
+  (CF thuần: 754 user)
+
+Chi tiết Coverage:
+  CF thuần   -- 961/1012 user trong utility matrix có >= 5 interactions
+  CF+Implicit -- 1012/1013 user trong utility matrix có >= 5 interactions
+
+End: 2026-07-22 00:02:53
