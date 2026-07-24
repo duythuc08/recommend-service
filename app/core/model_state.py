@@ -13,10 +13,14 @@ import pandas as pd
 from app.core.cf_engine import build_utility_matrix, build_surprise_trainset, train_knn_model, predict_ratings_for_user
 from app.core.cold_start import compute_popularity_scores
 from app.core.config import settings
-from app.core.implicit_scoring import build_implicit_scores, convert_to_rating_scale
+# TAM NGUNG: implicit feedback bi comment, xem implicit_scoring.py
+# from app.core.implicit_scoring import build_implicit_scores, convert_to_rating_scale
 from app.db.queries import (
-    load_all_reviews, load_all_activity_logs, load_candidate_movies,
-    load_scoring_params, load_all_excluded_movie_ids_bulk, upsert_user_preferences,
+    load_all_reviews, load_candidate_movies,
+    load_all_excluded_movie_ids_bulk, upsert_user_preferences,
+    save_utility_matrix,
+    # TAM NGUNG: implicit feedback bi comment - load_all_activity_logs, load_scoring_params
+    # khong con dung o day, xem ghi chu trong queries.py
 )
 
 
@@ -46,22 +50,31 @@ class ModelState:
         review_df = load_all_reviews(db_session)
         candidate_df = load_candidate_movies(db_session)
 
-        if use_implicit:
-            scoring_params = load_scoring_params(db_session)
-            alpha = scoring_params.get("ALPHA")
-            s0 = scoring_params.get("S0")
-
-            activity_df = load_all_activity_logs(db_session)
-            explicit_pairs = set(zip(review_df["user_id"], review_df["movie_id"]))
-            implicit_raw = build_implicit_scores(activity_df, explicit_pairs=explicit_pairs, now=t0, alpha=alpha)
-            implicit_scored = convert_to_rating_scale(implicit_raw, s0=s0)
-        else:
-            activity_df = pd.DataFrame()
-            implicit_scored = pd.DataFrame(columns=["user_id", "movie_id", "y"])
+        # TAM NGUNG: implicit feedback (comment theo yeu cau, khong xoa).
+        # Nhanh use_implicit=True ben duoi khong con duoc goi toi - luon di
+        # theo nhanh explicit-only, giu nguyen code cu de co the khoi phuc.
+        # if use_implicit:
+        #     scoring_params = load_scoring_params(db_session)
+        #     alpha = scoring_params.get("ALPHA")
+        #     s0 = scoring_params.get("S0")
+        #
+        #     activity_df = load_all_activity_logs(db_session)
+        #     explicit_pairs = set(zip(review_df["user_id"], review_df["movie_id"]))
+        #     implicit_raw = build_implicit_scores(activity_df, explicit_pairs=explicit_pairs, now=t0, alpha=alpha)
+        #     implicit_scored = convert_to_rating_scale(implicit_raw, s0=s0)
+        # else:
+        #     activity_df = pd.DataFrame()
+        #     implicit_scored = pd.DataFrame(columns=["user_id", "movie_id", "y"])
+        use_implicit = False
+        activity_df = pd.DataFrame()
+        implicit_scored = pd.DataFrame(columns=["user_id", "movie_id", "y"])
 
         utility_long = build_utility_matrix(review_df, implicit_scored, use_implicit=use_implicit)
         trainset = build_surprise_trainset(utility_long)
         algo = train_knn_model(trainset)
+        
+        # Save utility matrix to DB
+        save_utility_matrix(db_session, utility_long)
 
         with self._lock:
             self.algo = algo

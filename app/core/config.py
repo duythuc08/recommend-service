@@ -75,7 +75,11 @@ class Settings(BaseSettings):
     # False -> CF Pure (chỉ explicit rating, dùng để có baseline RMSE/MAE)
     # True  -> CF + Implicit (gộp cả implicit signal, dùng để so sánh
     #          cải thiện so với baseline)
-    cf_use_implicit: bool = True
+    # TAM NGUNG: implicit feedback bi comment (xem implicit_scoring.py va
+    # model_state.py) - doi mac dinh ve False. model_state.train() cung da
+    # ep cung use_implicit=False bat ke gia tri truyen vao, gia tri o day
+    # chi con y nghia tham chieu/hien thi.
+    cf_use_implicit: bool = False
 
     @property
     def sqlalchemy_url(self) -> str:

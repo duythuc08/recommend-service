@@ -158,3 +158,61 @@ def load_excluded_movie_ids(db: Session, user_id: str) -> set[int]:
     """)
     rows = db.execute(query, {"uid": user_id}).fetchall()
     return {int(r[0]) for r in rows}
+
+
+def save_utility_matrix(
+    db: Session,
+    utility_df: pd.DataFrame,
+    batch_size: int = 1000,
+) -> int:
+    """
+    TRUNCATE bảng utility_matrix và INSERT toàn bộ dữ liệu mới từ ma trận đã gộp.
+    Bảng có các cột: created_at, entity_status, updated_at, has_implicit, y_score, movie_id, user_id, has_explicit.
+    """
+    if utility_df.empty:
+        # Nếu empty, vẫn TRUNCATE bảng
+        db.execute(text("TRUNCATE TABLE utility_matrix"))
+        db.commit()
+        return 0
+
+    # 1. Truncate bảng cũ
+    db.execute(text("TRUNCATE TABLE utility_matrix"))
+    
+    # 2. Chuẩn bị dữ liệu insert
+    insert_sql = text("""
+        INSERT INTO utility_matrix (
+            user_id, movie_id, y_score, has_explicit, has_implicit,
+            created_at, updated_at, entity_status
+        ) VALUES (
+            :user_id, :movie_id, :y_score, :has_explicit, :has_implicit,
+            :created_at, :updated_at, :entity_status
+        )
+    """)
+    
+    now = datetime.utcnow()
+    records = []
+    
+    for _, row in utility_df.iterrows():
+        has_exp = bool(row["has_explicit"])
+        has_imp = not has_exp # Vì logic gộp là: nếu có explicit thì lấy explicit, ko thì lấy implicit
+        
+        records.append({
+            "user_id": str(row["user_id"]),
+            "movie_id": int(row["movie_id"]),
+            "y_score": float(row["rating"]),
+            "has_explicit": 1 if has_exp else 0,
+            "has_implicit": 1 if has_imp else 0,
+            "created_at": now,
+            "updated_at": now,
+            "entity_status": "ACTIVE"
+        })
+
+    # 3. Batch insert
+    total = 0
+    for i in range(0, len(records), batch_size):
+        batch = records[i : i + batch_size]
+        db.execute(insert_sql, batch)
+        total += len(batch)
+
+    db.commit()
+    return total
