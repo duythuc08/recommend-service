@@ -100,6 +100,7 @@ def train(payload: TrainRequest = TrainRequest(), db: Session = Depends(get_db))
         nActivityLogs=result["n_activity_logs"],
         nUsersProcessed=result["n_users_processed"],
         nPredictionsWritten=result["n_predictions_written"],
+        nStalePredictionsDeleted=result["n_stale_predictions_deleted"],
         batchElapsedSeconds=result["batch_elapsed_seconds"],
     )
 

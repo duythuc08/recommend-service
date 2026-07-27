@@ -2,8 +2,8 @@
 Model state - giữ Surprise trainset + KNNWithMeans model trong memory.
 
 Thiết kế: 1 instance singleton được load lúc app startup và refresh khi
-gọi /train. Với quy mô 1010 user x 102 movie, RAM trong process là đủ,
-không cần thêm hạ tầng Redis.
+gọi /train. Với quy mô dữ liệu hiện tại, RAM trong process là đủ, không
+cần thêm hạ tầng Redis.
 """
 import threading
 from datetime import datetime
@@ -18,7 +18,7 @@ from app.core.config import settings
 from app.db.queries import (
     load_all_reviews, load_candidate_movies,
     load_all_excluded_movie_ids_bulk, upsert_user_preferences,
-    save_utility_matrix,
+    delete_stale_user_preferences, save_utility_matrix,
     # TAM NGUNG: implicit feedback bi comment - load_all_activity_logs, load_scoring_params
     # khong con dung o day, xem ghi chu trong queries.py
 )
@@ -113,7 +113,12 @@ class ModelState:
         algo, trainset, utility_long, candidate_movies, _ = self.get_snapshot()
 
         if utility_long is None or utility_long.empty or candidate_movies is None:
-            return {"n_users_processed": 0, "n_predictions_written": 0, "batch_elapsed_seconds": 0.0}
+            return {
+                "n_users_processed": 0,
+                "n_predictions_written": 0,
+                "n_stale_predictions_deleted": 0,
+                "batch_elapsed_seconds": 0.0,
+            }
 
         cf_source = "cf_implicit" if self.last_use_implicit else "cf_pure"
 
@@ -179,11 +184,16 @@ class ModelState:
             n_users_processed += 1
 
         n_written = upsert_user_preferences(db_session, all_predictions)
+        # Dọn các dòng trỏ tới phim không còn NOW_SHOWING/COMING_SOON (vd đã
+        # chuyển sang STOPPED) - upsert ở trên chỉ INSERT/UPDATE nên không tự
+        # xóa được, phải dọn riêng để user_preference không tích lũy stale data.
+        n_deleted_stale = delete_stale_user_preferences(db_session, all_candidate_ids)
         elapsed = (datetime.utcnow() - t0).total_seconds()
 
         return {
             "n_users_processed": n_users_processed,
             "n_predictions_written": n_written,
+            "n_stale_predictions_deleted": n_deleted_stale,
             "batch_elapsed_seconds": elapsed,
         }
 

@@ -36,4 +36,5 @@ class TrainResponse(BaseModel):
     nActivityLogs: int
     nUsersProcessed: int    # số user đã tính batch prediction
     nPredictionsWritten: int  # số dòng upsert vào user_preference
+    nStalePredictionsDeleted: int  # số dòng user_preference đã dọn (movie không còn NOW_SHOWING/COMING_SOON)
     batchElapsedSeconds: float  # thời gian riêng của bước predict_all_users

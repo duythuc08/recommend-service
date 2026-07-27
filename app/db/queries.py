@@ -9,7 +9,7 @@ Nguyên tắc tránh N+1 (bài học từ UtilityMatrixBuilderTasklet cũ):
 from datetime import datetime
 
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 
@@ -59,10 +59,18 @@ def load_candidate_movies(db: Session) -> pd.DataFrame:
     Đây là phạm vi duy nhất được xét để gợi ý - không gợi ý phim đã STOPPED.
     """
     query = text("""
-        SELECT movie_id, title, movie_status, release_date
-        FROM movie
-        WHERE entity_status = 'ACTIVE'
-          AND movie_status IN ('NOW_SHOWING', 'COMING_SOON')
+        SELECT m.movie_id, m.title, m.movie_status, m.release_date
+        FROM movie m
+        WHERE m.entity_status = 'ACTIVE'
+          AND m.movie_status IN ('NOW_SHOWING', 'COMING_SOON')
+          AND EXISTS (
+              SELECT 1
+              FROM show_time st
+              WHERE st.movie_id = m.movie_id
+                AND st.entity_status = 'ACTIVE'
+                AND st.show_time_status IN ('SCHEDULED', 'ONGOING')
+                AND st.end_time >= CURRENT_TIMESTAMP
+          )
     """)
     rows = db.execute(query).fetchall()
     df = pd.DataFrame(rows, columns=["movie_id", "title", "movie_status", "release_date"])
@@ -84,7 +92,10 @@ def load_all_excluded_movie_ids_bulk(db: Session) -> dict[str, set[int]]:
     """
     Load toàn bộ excluded movies cho TẤT CẢ user trong 1 query duy nhất.
     Dùng cho batch predict_all_users() - tránh N query riêng lẻ cho từng user.
-    excluded = phim có explicit review HOẶC đã BOOK_TICKET thành công.
+    excluded = phim có explicit review HOẶC đã BOOK_TICKET thành công (log)
+    HOẶC có order PAID/USED cho phim đó. Nguồn order được thêm vì
+    user_activity_logs.BOOK_TICKET chỉ là log hành vi, có thể ghi thiếu/lỗi -
+    orders là nguồn sự thật (source of truth) về giao dịch thật sự.
     """
     query = text("""
         SELECT user_id, movie_id FROM review
@@ -92,6 +103,13 @@ def load_all_excluded_movie_ids_bulk(db: Session) -> dict[str, set[int]]:
         UNION
         SELECT user_id, movie_id FROM user_activity_logs
         WHERE action_type = 'BOOK_TICKET' AND entity_status = 'ACTIVE'
+        UNION
+        SELECT o.user_id, st.movie_id
+        FROM orders o
+        JOIN order_ticket ot ON ot.order_id = o.order_id
+        JOIN seat_show_time sst ON sst.seat_show_time_id = ot.seat_show_time_id
+        JOIN show_time st ON st.show_time_id = sst.show_time_id
+        WHERE o.order_status IN ('PAID', 'USED')
     """)
     rows = db.execute(query).fetchall()
     result: dict[str, set[int]] = {}
@@ -142,12 +160,38 @@ def upsert_user_preferences(
     return total
 
 
+def delete_stale_user_preferences(db: Session, valid_movie_ids: list[int]) -> int:
+    """
+    Xóa các dòng user_preference có movie_id KHÔNG còn nằm trong candidate set
+    hiện tại (NOW_SHOWING/COMING_SOON). Cần gọi sau mỗi lần upsert_user_preferences
+    để dọn rác khi phim chuyển sang STOPPED - upsert chỉ INSERT/UPDATE, không tự
+    xóa dòng cũ, nên nếu thiếu bước này thì user_preference sẽ tích lũy stale data
+    trỏ tới phim đã ngưng chiếu.
+    """
+    if not valid_movie_ids:
+        delete_sql = text("DELETE FROM user_preference")
+        result = db.execute(delete_sql)
+    else:
+        delete_sql = text("""
+            DELETE FROM user_preference
+            WHERE movie_id NOT IN :valid_movie_ids
+        """).bindparams(bindparam("valid_movie_ids", expanding=True))
+        result = db.execute(delete_sql, {"valid_movie_ids": valid_movie_ids})
+
+    db.commit()
+    return result.rowcount
+
+
 def load_excluded_movie_ids(db: Session, user_id: str) -> set[int]:
     """
     excluded_movies(u) theo đúng định nghĩa đã chốt:
-    chỉ loại những phim có rating THẬT (explicit) HOẶC có log BOOK_TICKET
-    (đã trả tiền thành công) - KHÔNG loại theo các implicit signal nhẹ
-    như WATCH_TRAILER, VIEW_DETAILS...
+    loại những phim có rating THẬT (explicit) HOẶC có log BOOK_TICKET (đã trả
+    tiền thành công) HOẶC có order PAID/USED cho phim đó - KHÔNG loại theo các
+    implicit signal nhẹ như WATCH_TRAILER, VIEW_DETAILS...
+
+    Nguồn order (PAID/USED) được thêm để tránh bỏ sót khi việc ghi log
+    BOOK_TICKET vào user_activity_logs bị thất bại/thiếu - orders là nguồn sự
+    thật (source of truth) về giao dịch, không phụ thuộc độ tin cậy của log.
     """
     query = text("""
         SELECT movie_id FROM review
@@ -155,6 +199,13 @@ def load_excluded_movie_ids(db: Session, user_id: str) -> set[int]:
         UNION
         SELECT movie_id FROM user_activity_logs
         WHERE user_id = :uid AND action_type = 'BOOK_TICKET' AND entity_status = 'ACTIVE'
+        UNION
+        SELECT st.movie_id
+        FROM orders o
+        JOIN order_ticket ot ON ot.order_id = o.order_id
+        JOIN seat_show_time sst ON sst.seat_show_time_id = ot.seat_show_time_id
+        JOIN show_time st ON st.show_time_id = sst.show_time_id
+        WHERE o.user_id = :uid AND o.order_status IN ('PAID', 'USED')
     """)
     rows = db.execute(query, {"uid": user_id}).fetchall()
     return {int(r[0]) for r in rows}

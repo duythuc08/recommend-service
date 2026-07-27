@@ -60,12 +60,12 @@ class Settings(BaseSettings):
     # S0 KHÔNG hard-code - tính động từ median(|S_u_i|) thực tế mỗi lần build matrix
 
     # ===== CF params =====
-    cf_top_k: int = 20
-    cf_min_co_rated_items: int = 2
+    cf_top_k: int = 40
+    cf_min_co_rated_items: int = 10
     cf_min_similarity: float = 0.0
 
     # ===== Cold start =====
-    cold_start_min_interactions: int = 5
+    cold_start_min_interactions: int = 10
     cold_start_popularity_alpha: float = 0.5
 
     # ===== Prediction =====
