@@ -78,16 +78,6 @@ def load_candidate_movies(db: Session) -> pd.DataFrame:
     return df
 
 
-def load_scoring_params(db: Session) -> dict[str, float]:
-    """
-    Đọc ALPHA và S0 từ bảng scoring_params (do Spring Boot tính mỗi thứ 2 3AM).
-    Trả về dict rỗng nếu chưa có (lần đầu chạy hệ thống).
-    """
-    query = text("SELECT param_name, param_value FROM scoring_params")
-    rows = db.execute(query).fetchall()
-    return {r[0]: float(r[1]) for r in rows}
-
-
 def load_all_excluded_movie_ids_bulk(db: Session) -> dict[str, set[int]]:
     """
     Load toàn bộ excluded movies cho TẤT CẢ user trong 1 query duy nhất.

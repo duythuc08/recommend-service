@@ -13,14 +13,10 @@ import pandas as pd
 from app.core.cf_engine import build_utility_matrix, build_surprise_trainset, train_knn_model, predict_ratings_for_user
 from app.core.cold_start import compute_popularity_scores
 from app.core.config import settings
-# TAM NGUNG: implicit feedback bi comment, xem implicit_scoring.py
-# from app.core.implicit_scoring import build_implicit_scores, convert_to_rating_scale
 from app.db.queries import (
     load_all_reviews, load_candidate_movies,
     load_all_excluded_movie_ids_bulk, upsert_user_preferences,
     delete_stale_user_preferences, save_utility_matrix,
-    # TAM NGUNG: implicit feedback bi comment - load_all_activity_logs, load_scoring_params
-    # khong con dung o day, xem ghi chu trong queries.py
 )
 
 
@@ -37,35 +33,17 @@ class ModelState:
 
     def train(self, db_session, use_implicit: bool | None = None) -> dict:
         """
-        use_implicit: None -> dùng default từ config (settings.cf_use_implicit).
-        Truyền riêng True/False để chạy 1 lần dưới mode khác, phục vụ
-        so sánh benchmark CF Pure vs CF+Implicit ngay trên cùng 1 service
-        mà không cần đổi config/restart.
+        Train CF thuần (chỉ dùng explicit rating từ bảng review). Hệ thống
+        không còn hỗ trợ implicit feedback — tham số use_implicit được giữ
+        lại để không phá vỡ contract của endpoint /train (TrainRequest),
+        nhưng luôn bị bỏ qua, mọi request đều train theo nhánh explicit-only.
         """
-        if use_implicit is None:
-            use_implicit = settings.cf_use_implicit
-
+        use_implicit = False
         t0 = datetime.utcnow()
 
         review_df = load_all_reviews(db_session)
         candidate_df = load_candidate_movies(db_session)
 
-        # TAM NGUNG: implicit feedback (comment theo yeu cau, khong xoa).
-        # Nhanh use_implicit=True ben duoi khong con duoc goi toi - luon di
-        # theo nhanh explicit-only, giu nguyen code cu de co the khoi phuc.
-        # if use_implicit:
-        #     scoring_params = load_scoring_params(db_session)
-        #     alpha = scoring_params.get("ALPHA")
-        #     s0 = scoring_params.get("S0")
-        #
-        #     activity_df = load_all_activity_logs(db_session)
-        #     explicit_pairs = set(zip(review_df["user_id"], review_df["movie_id"]))
-        #     implicit_raw = build_implicit_scores(activity_df, explicit_pairs=explicit_pairs, now=t0, alpha=alpha)
-        #     implicit_scored = convert_to_rating_scale(implicit_raw, s0=s0)
-        # else:
-        #     activity_df = pd.DataFrame()
-        #     implicit_scored = pd.DataFrame(columns=["user_id", "movie_id", "y"])
-        use_implicit = False
         activity_df = pd.DataFrame()
         implicit_scored = pd.DataFrame(columns=["user_id", "movie_id", "y"])
 
