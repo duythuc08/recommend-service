@@ -164,9 +164,9 @@ def main():
     data = Dataset.load_from_df(review_df[["user_id", "movie_id", "rating"]], reader)
 
     # Cấu hình giống hệ thống đang dùng (cf_engine.py): cosine, user_based=True,
-    # min_support=2, k=20 láng giềng.
-    sim_options = {"name": "cosine", "user_based": True, "min_support": 2}
-    algo_kwargs = {"k": 20, "min_k": 2, "sim_options": sim_options}
+    # min_support=10, k=40 láng giềng.
+    sim_options = {"name": "cosine", "user_based": True, "min_support": 10}
+    algo_kwargs = {"k": 40, "min_k": 2, "sim_options": sim_options}
 
     results = {}
     for name, algo_class in [("KNNBasic", KNNBasic), ("KNNWithMeans", KNNWithMeans)]:
