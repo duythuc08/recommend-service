@@ -1,0 +1,29 @@
+==============================================================================
+  GRID SEARCH: THAM SỐ TỐT NHẤT THEO TỪNG CHỈ SỐ
+==============================================================================
+
+--- KNNBasic ---
+  RMSE thấp nhất              : k=60  min_support=3   -> RMSE=1.0141 MAE=0.8035 P@10=0.6566 R@10=0.3211
+  MAE thấp nhất               : k=30  min_support=5   -> RMSE=1.0149 MAE=0.8009 P@10=0.6677 R@10=0.3428
+  Precision@10 cao nhất       : k=20  min_support=5   -> RMSE=1.0187 MAE=0.8041 P@10=0.6745 R@10=0.3541
+  Recall@10 cao nhất          : k=5   min_support=10  -> RMSE=1.0668 MAE=0.8362 P@10=0.6682 R@10=0.3910
+
+--- KNNWithMeans ---
+  RMSE thấp nhất              : k=40  min_support=5   -> RMSE=0.9504 MAE=0.7499 P@10=0.5676 R@10=0.2984
+  MAE thấp nhất               : k=60  min_support=10  -> RMSE=0.9519 MAE=0.7486 P@10=0.5956 R@10=0.3272
+  Precision@10 cao nhất       : k=5   min_support=10  -> RMSE=1.0005 MAE=0.7885 P@10=0.6050 R@10=0.3335
+  Recall@10 cao nhất          : k=5   min_support=15  -> RMSE=0.9973 MAE=0.7856 P@10=0.5941 R@10=0.3381
+
+==============================================================================
+  SO SÁNH CHÉO: KNNBasic (tối ưu riêng) vs KNNWithMeans (tối ưu riêng)
+==============================================================================
+
+  RMSE           : KNNBasic best=1.0141  KNNWithMeans best=0.9504  -> KNNWithMeans thắng
+  MAE            : KNNBasic best=0.8009  KNNWithMeans best=0.7486  -> KNNWithMeans thắng
+  Precision@10   : KNNBasic best=0.6745  KNNWithMeans best=0.6050  -> KNNBasic thắng
+  Recall@10      : KNNBasic best=0.3910  KNNWithMeans best=0.3381  -> KNNBasic thắng
+
+>> KHÔNG có thuật toán nào thắng tuyệt đối cả 4 chỉ số (KNNBasic thắng 2/4, KNNWithMeans thắng 2/4).
+>> Không ép ra 1 'người thắng' duy nhất -- dùng bảng tham số tốt nhất theo
+>> từng chỉ số ở trên để chọn tùy theo mục tiêu ưu tiên của hệ thống
+>> (ranking top-K -> ưu tiên Precision/Recall; dự đoán điểm -> ưu tiên RMSE/MAE).

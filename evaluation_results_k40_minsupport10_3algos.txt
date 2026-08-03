@@ -1,0 +1,13 @@
+======================================================================================
+  SO SANH 3 THUAT TOAN: basic vs baseline vs means
+======================================================================================
+algo_k=40, min_support=10, Precision/Recall@10, threshold=4.0, cv=5
+dataset: 100081 ratings, 949 users, 1682 movies
+
+Chi so                          basic       baseline          means       Tot nhat
+---------------------- -------------- -------------- -------------- --------------
+RMSE                           1.0174         0.9324         0.9513       baseline
+MAE                            0.8038         0.7339         0.7483       baseline
+Precision@10                   0.6528         0.6537         0.5985       baseline
+Recall@10                      0.3237         0.3169         0.3273          means
+Fit time TB (s)                0.7381         1.0279         0.9171          basic

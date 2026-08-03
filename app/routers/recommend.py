@@ -4,14 +4,13 @@ from sqlalchemy.orm import Session
 from app.core.cf_engine import predict_ratings_for_user
 from app.core.cold_start import compute_popularity_scores, count_user_interactions
 from app.core.config import settings
-from app.core.model_state import model_state
+from app.core.model_state import CF_SOURCE, model_state
 from app.db.queries import load_excluded_movie_ids
 from app.db.session import get_db
 from app.models.schemas import (
+    MoviePrediction,
     RecommendRequest,
     RecommendResponse,
-    MoviePrediction,
-    TrainRequest,
     TrainResponse,
 )
 
@@ -23,11 +22,10 @@ def recommend(payload: RecommendRequest, db: Session = Depends(get_db)):
     if not model_state.is_ready:
         raise HTTPException(
             status_code=503,
-            detail="Model chưa được train. Gọi POST /train trước, hoặc đợi scheduler 3AM chạy.",
+            detail="Model chua duoc train. Goi POST /train truoc, hoac doi scheduler 3AM chay.",
         )
 
     algo, trainset, utility_long, candidate_movies, trained_at = model_state.get_snapshot()
-    cf_mode = "cf_implicit" if model_state.last_use_implicit else "cf_pure"
 
     user_id = payload.userId
     excluded_ids = load_excluded_movie_ids(db, user_id)
@@ -37,7 +35,10 @@ def recommend(payload: RecommendRequest, db: Session = Depends(get_db)):
 
     if not candidate_ids:
         return RecommendResponse(
-            userId=user_id, recommendations=[], usedColdStart=False, cfMode=cf_mode,
+            userId=user_id,
+            recommendations=[],
+            usedColdStart=False,
+            cfMode=CF_SOURCE,
             modelTrainedAt=trained_at.isoformat() if trained_at else None,
         )
 
@@ -64,7 +65,7 @@ def recommend(payload: RecommendRequest, db: Session = Depends(get_db)):
         else:
             ranked = sorted(predictions.items(), key=lambda x: -x[1][0])[: settings.prediction_top_n]
             recs = [
-                MoviePrediction(movieId=mid, predictedScore=score, neighborCount=nc, source="cf")
+                MoviePrediction(movieId=mid, predictedScore=score, neighborCount=nc, source=CF_SOURCE)
                 for mid, (score, nc) in ranked
             ]
 
@@ -72,32 +73,21 @@ def recommend(payload: RecommendRequest, db: Session = Depends(get_db)):
         userId=user_id,
         recommendations=recs,
         usedColdStart=use_cold_start,
-        cfMode=cf_mode,
+        cfMode=CF_SOURCE,
         modelTrainedAt=trained_at.isoformat() if trained_at else None,
     )
 
 
 @router.post("/train", response_model=TrainResponse)
-def train(payload: TrainRequest = TrainRequest(), db: Session = Depends(get_db)):
-    """
-    Gọi bình thường (body rỗng hoặc {}) -> dùng mode default từ config
-    (REC_CF_USE_IMPLICIT trong .env).
-
-    Gọi với body {"useImplicit": false} -> force chạy CF Pure 1 lần,
-    dù config đang là True. Dùng để so sánh 2 mode ngay trên cùng server
-    mà không cần đổi .env / restart - tiện cho quá trình benchmark
-    "chạy thuần trước, cải thiện dần sau" đã chốt.
-    """
-    result = model_state.train(db, use_implicit=payload.useImplicit)
+def train(db: Session = Depends(get_db)):
+    result = model_state.train(db)
     return TrainResponse(
         trainedAt=result["trained_at"],
         elapsedSeconds=result["elapsed_seconds"],
-        useImplicit=result["use_implicit"],
         nUsers=result["n_users"],
         nMoviesInMatrix=result["n_movies_in_matrix"],
         nCandidateMovies=result["n_candidate_movies"],
         nExplicitRatings=result["n_explicit_ratings"],
-        nActivityLogs=result["n_activity_logs"],
         nUsersProcessed=result["n_users_processed"],
         nPredictionsWritten=result["n_predictions_written"],
         nStalePredictionsDeleted=result["n_stale_predictions_deleted"],
@@ -110,6 +100,6 @@ def health():
     return {
         "status": "ok",
         "modelReady": model_state.is_ready,
-        "cfMode": "cf_implicit" if model_state.last_use_implicit else "cf_pure",
+        "cfMode": CF_SOURCE,
         "lastTrainedAt": model_state.last_trained_at.isoformat() if model_state.last_trained_at else None,
     }

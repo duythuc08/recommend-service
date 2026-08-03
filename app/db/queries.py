@@ -177,7 +177,7 @@ def load_excluded_movie_ids(db: Session, user_id: str) -> set[int]:
     excluded_movies(u) theo đúng định nghĩa đã chốt:
     loại những phim có rating THẬT (explicit) HOẶC có log BOOK_TICKET (đã trả
     tiền thành công) HOẶC có order PAID/USED cho phim đó - KHÔNG loại theo các
-    implicit signal nhẹ như WATCH_TRAILER, VIEW_DETAILS...
+    signal nhe nhu WATCH_TRAILER, VIEW_DETAILS...
 
     Nguồn order (PAID/USED) được thêm để tránh bỏ sót khi việc ghi log
     BOOK_TICKET vào user_activity_logs bị thất bại/thiếu - orders là nguồn sự
@@ -208,7 +208,7 @@ def save_utility_matrix(
 ) -> int:
     """
     TRUNCATE bảng utility_matrix và INSERT toàn bộ dữ liệu mới từ ma trận đã gộp.
-    Bảng có các cột: created_at, entity_status, updated_at, has_implicit, y_score, movie_id, user_id, has_explicit.
+    Bang utility_matrix duoc refresh tu utility_long sau moi lan train.
     """
     if utility_df.empty:
         # Nếu empty, vẫn TRUNCATE bảng
@@ -235,14 +235,13 @@ def save_utility_matrix(
     
     for _, row in utility_df.iterrows():
         has_exp = bool(row["has_explicit"])
-        has_imp = not has_exp # Vì logic gộp là: nếu có explicit thì lấy explicit, ko thì lấy implicit
         
         records.append({
             "user_id": str(row["user_id"]),
             "movie_id": int(row["movie_id"]),
             "y_score": float(row["rating"]),
             "has_explicit": 1 if has_exp else 0,
-            "has_implicit": 1 if has_imp else 0,
+            "has_implicit": 0,
             "created_at": now,
             "updated_at": now,
             "entity_status": "ACTIVE"

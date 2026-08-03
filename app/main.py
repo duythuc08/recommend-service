@@ -1,10 +1,10 @@
 """
 Entry point cho Recommendation Service (FastAPI).
 
-Luồng khởi động:
-1. App start -> train ngay 1 lần (để có model sẵn sàng, không phải chờ đến 3AM)
-2. Spring Boot scheduler gọi POST /api/train mỗi ngày lúc 3:00 AM
-3. Endpoint POST /api/train vẫn mở để admin trigger thủ công khi cần
+Luong khoi dong:
+1. App start -> train ngay 1 lan de co model san sang
+2. Spring Boot scheduler goi POST /api/train moi ngay luc 3:00 AM
+3. Endpoint POST /api/train van mo de admin trigger thu cong khi can
 """
 from contextlib import asynccontextmanager
 
@@ -17,13 +17,12 @@ from app.routers.recommend import router as recommend_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Train ngay lúc startup để có model sẵn sàng phục vụ request đầu tiên
     db = SessionLocal()
     try:
         result = model_state.train(db)
-        print(f"[startup] Train hoàn tất: {result}")
+        print(f"[startup] Train hoan tat: {result}")
     except Exception as e:
-        print(f"[startup] Train LỖI (model sẽ chạy ở trạng thái chưa ready): {e}")
+        print(f"[startup] Train loi, model chua ready: {e}")
     finally:
         db.close()
 
@@ -32,7 +31,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Infinity Cinema - Recommendation Service",
-    description="User-Based Memory CF + Implicit Feedback, phục vụ gợi ý top-N phim cho Spring Boot Backend.",
+    description="User-Based Memory CF phuc vu goi y top-N phim cho Spring Boot Backend.",
     version="1.0.0",
     lifespan=lifespan,
 )

@@ -1,23 +1,32 @@
 """
-Model state - giữ Surprise trainset + KNNWithMeans model trong memory.
+Model state - giu Surprise trainset + KNNWithMeans model trong memory.
 
-Thiết kế: 1 instance singleton được load lúc app startup và refresh khi
-gọi /train. Với quy mô dữ liệu hiện tại, RAM trong process là đủ, không
-cần thêm hạ tầng Redis.
+Mot singleton duoc train luc app startup va refresh khi goi /train.
 """
 import threading
 from datetime import datetime
 
 import pandas as pd
 
-from app.core.cf_engine import build_utility_matrix, build_surprise_trainset, train_knn_model, predict_ratings_for_user
+from app.core.cf_engine import (
+    build_surprise_trainset,
+    build_utility_matrix,
+    predict_ratings_for_user,
+    train_knn_model,
+)
 from app.core.cold_start import compute_popularity_scores
 from app.core.config import settings
 from app.db.queries import (
-    load_all_reviews, load_candidate_movies,
-    load_all_excluded_movie_ids_bulk, upsert_user_preferences,
-    delete_stale_user_preferences, save_utility_matrix,
+    delete_stale_user_preferences,
+    load_all_excluded_movie_ids_bulk,
+    load_all_reviews,
+    load_candidate_movies,
+    save_utility_matrix,
+    upsert_user_preferences,
 )
+
+
+CF_SOURCE = "cf_pure"
 
 
 class ModelState:
@@ -29,29 +38,20 @@ class ModelState:
         self.candidate_movies: pd.DataFrame | None = None
         self.last_trained_at: datetime | None = None
         self.is_ready: bool = False
-        self.last_use_implicit: bool = settings.cf_use_implicit  # mode của lần train gần nhất
 
-    def train(self, db_session, use_implicit: bool | None = None) -> dict:
+    def train(self, db_session) -> dict:
         """
-        Train CF thuần (chỉ dùng explicit rating từ bảng review). Hệ thống
-        không còn hỗ trợ implicit feedback — tham số use_implicit được giữ
-        lại để không phá vỡ contract của endpoint /train (TrainRequest),
-        nhưng luôn bị bỏ qua, mọi request đều train theo nhánh explicit-only.
+        Train User-Based CF chi tu explicit rating trong bang review.
         """
-        use_implicit = False
         t0 = datetime.utcnow()
 
         review_df = load_all_reviews(db_session)
         candidate_df = load_candidate_movies(db_session)
 
-        activity_df = pd.DataFrame()
-        implicit_scored = pd.DataFrame(columns=["user_id", "movie_id", "y"])
-
-        utility_long = build_utility_matrix(review_df, implicit_scored, use_implicit=use_implicit)
+        utility_long = build_utility_matrix(review_df)
         trainset = build_surprise_trainset(utility_long)
         algo = train_knn_model(trainset)
-        
-        # Save utility matrix to DB
+
         save_utility_matrix(db_session, utility_long)
 
         with self._lock:
@@ -61,7 +61,6 @@ class ModelState:
             self.candidate_movies = candidate_df
             self.last_trained_at = t0
             self.is_ready = True
-            self.last_use_implicit = use_implicit
 
         elapsed = (datetime.utcnow() - t0).total_seconds()
         batch_stats = self.predict_all_users(db_session)
@@ -69,23 +68,16 @@ class ModelState:
         return {
             "trained_at": t0.isoformat(),
             "elapsed_seconds": elapsed,
-            "use_implicit": use_implicit,
             "n_users": utility_long["user_id"].nunique() if not utility_long.empty else 0,
             "n_movies_in_matrix": utility_long["movie_id"].nunique() if not utility_long.empty else 0,
             "n_candidate_movies": len(candidate_df) if candidate_df is not None else 0,
             "n_explicit_ratings": len(review_df),
-            "n_activity_logs": len(activity_df),
             **batch_stats,
         }
 
     def predict_all_users(self, db_session) -> dict:
         """
-        Sau khi train() xong, tinh prediction cho TOAN BO user va UPSERT vao user_preference.
-
-        source duoc ghi theo dung mode dang chay:
-          - "cf_implicit"            : CF voi implicit feedback
-          - "cf_pure"                : CF chi dung explicit rating
-          - "cold_start_popularity"  : user it tuong tac, fallback popularity
+        Sau khi train() xong, tinh prediction cho toan bo user va upsert vao user_preference.
         """
         t0 = datetime.utcnow()
         algo, trainset, utility_long, candidate_movies, _ = self.get_snapshot()
@@ -98,8 +90,6 @@ class ModelState:
                 "batch_elapsed_seconds": 0.0,
             }
 
-        cf_source = "cf_implicit" if self.last_use_implicit else "cf_pure"
-
         all_user_ids = utility_long["user_id"].unique().tolist()
         all_candidate_ids = candidate_movies["movie_id"].tolist()
 
@@ -107,9 +97,7 @@ class ModelState:
 
         all_predictions: list[dict] = []
         n_users_processed = 0
-
-        # Cache popularity scores de khong tinh lai nhieu lan cho nhieu cold-start user
-        _popularity_cache: dict[int, float] | None = None
+        popularity_cache: dict[int, float] | None = None
 
         for user_id in all_user_ids:
             excluded = excluded_map.get(str(user_id), set())
@@ -119,11 +107,10 @@ class ModelState:
 
             k_u = int((utility_long["user_id"] == user_id).sum())
             if k_u < settings.cold_start_min_interactions:
-                # Cold-start: tinh popularity va ghi vao DB luon
-                if _popularity_cache is None:
-                    _popularity_cache = compute_popularity_scores(db_session, all_candidate_ids)
+                if popularity_cache is None:
+                    popularity_cache = compute_popularity_scores(db_session, all_candidate_ids)
                 for movie_id in candidate_ids:
-                    score = _popularity_cache.get(movie_id, 0.0)
+                    score = popularity_cache.get(movie_id, 0.0)
                     all_predictions.append({
                         "user_id": user_id,
                         "movie_id": movie_id,
@@ -136,11 +123,10 @@ class ModelState:
 
             preds = predict_ratings_for_user(user_id, algo, trainset, candidate_ids)
             if not preds:
-                # Surprise khong du neighbor hop le -> fallback popularity
-                if _popularity_cache is None:
-                    _popularity_cache = compute_popularity_scores(db_session, all_candidate_ids)
+                if popularity_cache is None:
+                    popularity_cache = compute_popularity_scores(db_session, all_candidate_ids)
                 for movie_id in candidate_ids:
-                    score = _popularity_cache.get(movie_id, 0.0)
+                    score = popularity_cache.get(movie_id, 0.0)
                     all_predictions.append({
                         "user_id": user_id,
                         "movie_id": movie_id,
@@ -157,14 +143,11 @@ class ModelState:
                     "movie_id": movie_id,
                     "predicted_score": predicted_score,
                     "neighbor_count": neighbor_count,
-                    "source": cf_source,
+                    "source": CF_SOURCE,
                 })
             n_users_processed += 1
 
         n_written = upsert_user_preferences(db_session, all_predictions)
-        # Dọn các dòng trỏ tới phim không còn NOW_SHOWING/COMING_SOON (vd đã
-        # chuyển sang STOPPED) - upsert ở trên chỉ INSERT/UPDATE nên không tự
-        # xóa được, phải dọn riêng để user_preference không tích lũy stale data.
         n_deleted_stale = delete_stale_user_preferences(db_session, all_candidate_ids)
         elapsed = (datetime.utcnow() - t0).total_seconds()
 

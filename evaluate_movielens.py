@@ -2,8 +2,7 @@
 evaluate_movielens.py -- So sánh KNNBasic vs KNNWithMeans trên dữ liệu MovieLens
 đã import vào DB của hệ thống.
 
-Thay thế cho phần so sánh "CF thuần vs CF + Implicit" trong evaluate.py
-(đã tạm ngưng cùng implicit_scoring.py). Mục tiêu bây giờ là so sánh 2
+Mục tiêu bây giờ là so sánh 2
 biến thể của thuật toán User-Based CF trong cùng thư viện scikit-surprise:
 
   - KNNBasic       : r_hat(u,i) = sum_v sim(u,v)*r(v,i) / sum_v sim(u,v)

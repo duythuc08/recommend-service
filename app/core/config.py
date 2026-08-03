@@ -2,29 +2,24 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # ===== Database =====
+    # Database
     db_host: str = "127.0.0.1"
     db_port: int = 3306
     db_user: str = "root"
     db_password: str = ""
     db_name: str = "movie_ticket"
 
-    # ===== CF params =====
+    # CF params
     cf_top_k: int = 40
     cf_min_co_rated_items: int = 10
     cf_min_similarity: float = 0.0
 
-    # ===== Cold start =====
+    # Cold start
     cold_start_min_interactions: int = 10
     cold_start_popularity_alpha: float = 0.5
 
-    # ===== Prediction =====
+    # Prediction
     prediction_top_n: int = 5
-
-    # ===== CF mode =====
-    # Hệ thống chỉ hỗ trợ CF Pure (explicit rating). Giữ field này ở giá trị
-    # cố định False để không phá vỡ contract của TrainRequest/model_state.
-    cf_use_implicit: bool = False
 
     @property
     def sqlalchemy_url(self) -> str:

@@ -1,10 +1,8 @@
 """
-Cold-start fallback - Popularity Score (Mục 5.2, v11).
+Cold-start fallback - Popularity Score.
 
-Kích hoạt khi K_u < min-interactions-threshold (user quá mới hoặc quá ít
-dữ liệu để CF cho kết quả tin cậy).
-
-Score_Popularity(i) = alpha * Norm_Rating(i) + (1-alpha) * Norm_Tickets(i)
+Kich hoat khi K_u < min-interactions-threshold.
+Score_Popularity(i) = alpha * Norm_Rating(i) + (1 - alpha) * Norm_Tickets(i)
 """
 import pandas as pd
 from sqlalchemy import text
@@ -15,8 +13,8 @@ from app.core.config import settings
 
 def compute_popularity_scores(db: Session, candidate_movie_ids: list[int]) -> dict[int, float]:
     """
-    Norm_Rating(i): rating trung bình của phim i, normalize về [0,1] qua min-max.
-    Norm_Tickets(i): số lượt BOOK_TICKET của phim i, normalize về [0,1] qua min-max.
+    Norm_Rating(i): rating trung binh cua phim i, normalize ve [0,1].
+    Norm_Tickets(i): so luot BOOK_TICKET cua phim i, normalize ve [0,1].
     """
     if not candidate_movie_ids:
         return {}
@@ -49,7 +47,7 @@ def compute_popularity_scores(db: Session, candidate_movie_ids: list[int]) -> di
             return 0.0
         lo, hi = min(values_list), max(values_list)
         if hi == lo:
-            return 0.5  # tất cả bằng nhau -> trung lập
+            return 0.5
         return (value - lo) / (hi - lo)
 
     alpha = settings.cold_start_popularity_alpha
@@ -63,7 +61,7 @@ def compute_popularity_scores(db: Session, candidate_movie_ids: list[int]) -> di
 
 
 def count_user_interactions(utility_long: pd.DataFrame, user_id: str) -> int:
-    """K_u = số lượng item user đã tương tác (explicit + implicit, theo utility_long dạng long-format)."""
+    """K_u = so luong phim user da co rating trong utility_long."""
     if utility_long is None or utility_long.empty:
         return 0
     return int((utility_long["user_id"] == user_id).sum())
