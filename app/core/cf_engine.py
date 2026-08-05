@@ -16,11 +16,14 @@ from app.core.config import settings
 def build_utility_matrix(review_df: pd.DataFrame) -> pd.DataFrame:
     """
     Tao utility long-format DataFrame (user_id, movie_id, rating)
-    tu explicit rating trong bang review.
+    tu rating trong bang review.
     """
-    review_df = review_df.copy()
-    review_df["has_explicit"] = True
-    return review_df[["user_id", "movie_id", "rating", "has_explicit"]].reset_index(drop=True)
+    return (
+        review_df[["user_id", "movie_id", "rating"]]
+        .groupby(["user_id", "movie_id"], as_index=False)["rating"]
+        .mean()
+        .reset_index(drop=True)
+    )
 
 
 def build_surprise_trainset(utility_long: pd.DataFrame) -> Trainset:

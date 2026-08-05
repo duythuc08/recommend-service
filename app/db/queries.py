@@ -211,13 +211,14 @@ def save_utility_matrix(
     Bang utility_matrix duoc refresh tu utility_long sau moi lan train.
     """
     if utility_df.empty:
-        # Nếu empty, vẫn TRUNCATE bảng
-        db.execute(text("TRUNCATE TABLE utility_matrix"))
+        # Nếu empty, vẫn xóa bảng để không giữ ma trận cũ.
+        db.execute(text("DELETE FROM utility_matrix"))
         db.commit()
         return 0
 
-    # 1. Truncate bảng cũ
-    db.execute(text("TRUNCATE TABLE utility_matrix"))
+    # 1. Xóa bảng cũ trước khi insert ma trận mới.
+    db.execute(text("DELETE FROM utility_matrix"))
+    db.commit()
     
     # 2. Chuẩn bị dữ liệu insert
     insert_sql = text("""
@@ -234,13 +235,11 @@ def save_utility_matrix(
     records = []
     
     for _, row in utility_df.iterrows():
-        has_exp = bool(row["has_explicit"])
-        
         records.append({
             "user_id": str(row["user_id"]),
             "movie_id": int(row["movie_id"]),
             "y_score": float(row["rating"]),
-            "has_explicit": 1 if has_exp else 0,
+            "has_explicit": 1,
             "has_implicit": 0,
             "created_at": now,
             "updated_at": now,
